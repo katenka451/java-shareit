@@ -37,6 +37,22 @@ public class ErrorHandler {
 
     @ExceptionHandler
     @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleAvailableItemNotFound(AvailableItemNotFoundException e) {
+        String errorText = "Доступная вещь с id = " + e.getId().toString() + " не найдена";
+        log.error(errorText);
+        return new ErrorResponse(errorText);
+    }
+
+    @ExceptionHandler
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleBookingNotFound(BookingNotFoundException e) {
+        String errorText = "Бронирование с id = " + e.getId().toString() + " не найдено";
+        log.error(errorText);
+        return new ErrorResponse(errorText);
+    }
+
+    @ExceptionHandler
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleDataIntegrityViolationException(DataIntegrityViolationException e) {
         String errorText = "Неверные входные данные";
         log.error(errorText);

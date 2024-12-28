@@ -1,58 +1,163 @@
 package ru.practicum.shareit.item.service;
 
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import ru.practicum.shareit.booking.dal.BookingRepository;
+import ru.practicum.shareit.booking.model.Booking;
+import ru.practicum.shareit.error.exceptions.BookingNotFoundException;
 import ru.practicum.shareit.error.exceptions.ItemNotFoundException;
 import ru.practicum.shareit.error.exceptions.UserNotFoundException;
 import ru.practicum.shareit.error.exceptions.ValidationException;
-import ru.practicum.shareit.item.dal.ItemInMemoryRepository;
+import ru.practicum.shareit.item.dal.CommentRepository;
+import ru.practicum.shareit.item.dal.ItemRepository;
+import ru.practicum.shareit.item.dto.CommentDto;
 import ru.practicum.shareit.item.dto.ItemDto;
+import ru.practicum.shareit.item.dto.ItemWithBookDateDto;
+import ru.practicum.shareit.item.mapper.CommentMapper;
 import ru.practicum.shareit.item.mapper.ItemMapper;
-import ru.practicum.shareit.user.dal.UserInMemoryRepository;
+import ru.practicum.shareit.item.model.Item;
+import ru.practicum.shareit.user.dal.UserRepository;
+import ru.practicum.shareit.user.model.User;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ItemServiceImpl implements ItemService {
 
-    private final ItemInMemoryRepository itemRepository;
-    private final UserInMemoryRepository userRepository;
+    private final ItemRepository itemRepository;
+    private final UserRepository userRepository;
+    private final BookingRepository bookingRepository;
+    private final CommentRepository commentRepository;
 
-    @Override
-    public List<ItemDto> getAllUserItems(Long userId) {
-        return itemRepository.getAllUserItems(userId).stream()
-                .map(ItemMapper::mapToItemDto)
-                .toList();
+    public List<ItemWithBookDateDto> getAllUserItems(Long userId) {
+        List<Item> items = itemRepository.findByOwnerId(userId);
+        if (items.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<ItemWithBookDateDto> itemWithBookDateDto = new ArrayList<>();
+
+        // Понимаю, что выборки в циклах не есть хорошо,
+        // но нормального способа ограничить количество записей внутри группы, кроме как
+        // partition для postgres, я не нашла
+        // А это может сломать работу с H2, если она понадобится для тестирования в будущем
+        for (Item item : items) {
+            // В итоге для каждой позиции выбираем две записи о бронировании
+            Optional<Booking> lastBooking =
+                    bookingRepository.findFirstByItemIdAndStartIsBeforeOrderByStartDesc(
+                            item.getId(),
+                            LocalDateTime.now());
+
+            Optional<Booking> nextNearestBooking =
+                    bookingRepository.findFirstByItemIdAndStartIsAfterOrderByStart(
+                            item.getId(),
+                            LocalDateTime.now());
+
+            itemWithBookDateDto.add(ItemMapper.mapToItemWithBookDateDto(
+                    item,
+                    lastBooking.orElse(null),
+                    nextNearestBooking.orElse(null)));
+        }
+
+        return itemWithBookDateDto;
     }
 
-    public ItemDto getItemById(Long itemId) {
-        return itemRepository.getItemById(itemId)
-                .map(ItemMapper::mapToItemDto)
+    public ItemWithBookDateDto getItemById(Long itemId, Long userId) {
+        Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ItemNotFoundException(itemId));
+
+        List<CommentDto> comments = commentRepository.findByItemId(itemId).stream()
+                .map(CommentMapper::mapToCommentDto)
+                .toList();
+
+        Optional<Booking> lastBooking = Optional.empty();
+        Optional<Booking> nextNearestBooking = Optional.empty();
+
+        if (Objects.equals(item.getOwnerId(), userId)) {
+            lastBooking = bookingRepository.findFirstByItemIdAndStartIsBeforeOrderByStartDesc(
+                            itemId,
+                            LocalDateTime.now());
+
+            nextNearestBooking = bookingRepository.findFirstByItemIdAndStartIsAfterOrderByStart(
+                            itemId,
+                            LocalDateTime.now());
+        }
+
+        ItemWithBookDateDto itemDto = ItemMapper.mapToItemWithBookDateDto(
+                item,
+                lastBooking.orElse(null),
+                nextNearestBooking.orElse(null));
+
+        itemDto.setComments(comments);
+        return itemDto;
     }
 
     public List<ItemDto> searchItems(String text, Long userId) {
         if (text == null || text.isEmpty()) {
             return new ArrayList<>();
         }
-        return itemRepository.searchItems(text, userId)
+        return itemRepository.search(text)
                 .stream()
                 .map(ItemMapper::mapToItemDto)
                 .toList();
     }
 
+    @Transactional
     public ItemDto createItem(ItemDto newItem, Long userId) {
         validateDataCreation(newItem, userId);
-        return ItemMapper.mapToItemDto(itemRepository.createItem(ItemMapper.mapToItem(newItem), userId));
+        newItem.setOwnerId(userId);
+        return ItemMapper.mapToItemDto(itemRepository.save(ItemMapper.mapToItem(newItem)));
     }
 
+    @Transactional
+    public CommentDto addComment(Long authorId, Long itemId, CommentDto newComment) {
+        User author = userRepository.findById(authorId)
+                .orElseThrow(() -> new UserNotFoundException(authorId));
+
+        if (!bookingRepository.existsByBookerIdAndItemIdAndEndIsBefore(authorId, itemId, LocalDateTime.now())) {
+            throw new BookingNotFoundException(authorId);
+        }
+        Item item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ItemNotFoundException(itemId));
+
+        newComment.setCreated(LocalDateTime.now());
+
+        return CommentMapper.mapToCommentDto(commentRepository
+                .save(CommentMapper.mapToComment(newComment, item, author)));
+    }
+
+    @Transactional
     public ItemDto updateItem(Long itemId, ItemDto updItem, Long userId) {
         validateDataUpdate(itemId, userId);
-        return ItemMapper.mapToItemDto(itemRepository.updateItem(itemId, ItemMapper.mapToItem(updItem), userId));
+        Item itemToUpdate = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ItemNotFoundException(itemId));
+
+        if (updItem.getName() != null &&
+                !updItem.getName().isEmpty() &&
+                !updItem.getName().equals(itemToUpdate.getName())) {
+            itemToUpdate.setName(updItem.getName());
+        }
+
+        if (updItem.getDescription() != null &&
+                !updItem.getDescription().isEmpty() &&
+                !updItem.getDescription().equals(itemToUpdate.getDescription())) {
+            itemToUpdate.setDescription(updItem.getDescription());
+        }
+
+        if (updItem.getAvailable() != null &&
+                !updItem.getAvailable().equals(itemToUpdate.getAvailable())) {
+            itemToUpdate.setAvailable(updItem.getAvailable());
+        }
+
+        return ItemMapper.mapToItemDto(itemRepository.save(itemToUpdate));
     }
 
     private void validateDataCreation(ItemDto item, Long userId) {
@@ -62,7 +167,7 @@ public class ItemServiceImpl implements ItemService {
 
         log.info("Вызвана операция создания вещи {}", item.getName());
 
-        if (userRepository.getUserById(userId).isEmpty()) {
+        if (userRepository.findById(userId).isEmpty()) {
             throw new UserNotFoundException(userId);
         }
 
@@ -80,13 +185,16 @@ public class ItemServiceImpl implements ItemService {
             throw new ValidationException("Id вещи должен быть указан");
         }
 
+        Item itemToUpdate = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ItemNotFoundException(itemId));
+
         log.info("Вызвана операция обновления вещи {}", itemId);
 
         if (userId == null) {
             throw new ValidationException("Id пользователя должен быть указан");
         }
 
-        if (!itemRepository.isUserHasItem(userId, itemId)) {
+        if (!itemToUpdate.getOwnerId().equals(userId)) {
             throw new ItemNotFoundException(itemId);
         }
 
