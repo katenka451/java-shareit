@@ -191,7 +191,7 @@ public class BookingServiceImpl implements BookingService {
                         .stream()
                         .map(booking -> BookingMapper.mapToDetailedBookingDto(
                                 booking,
-                                owner,
+                                booking.getBooker(),
                                 booking.getItem()))
                         .toList();
             }
@@ -202,7 +202,7 @@ public class BookingServiceImpl implements BookingService {
                         .stream()
                         .map(booking -> BookingMapper.mapToDetailedBookingDto(
                                 booking,
-                                owner,
+                                booking.getBooker(),
                                 booking.getItem()))
                         .toList();
             }
@@ -213,7 +213,7 @@ public class BookingServiceImpl implements BookingService {
                         .stream()
                         .map(booking -> BookingMapper.mapToDetailedBookingDto(
                                 booking,
-                                owner,
+                                booking.getBooker(),
                                 booking.getItem()))
                         .toList();
             }
@@ -224,7 +224,7 @@ public class BookingServiceImpl implements BookingService {
                         .stream()
                         .map(booking -> BookingMapper.mapToDetailedBookingDto(
                                 booking,
-                                owner,
+                                booking.getBooker(),
                                 booking.getItem()))
                         .toList();
             }
@@ -235,7 +235,7 @@ public class BookingServiceImpl implements BookingService {
                         .stream()
                         .map(booking -> BookingMapper.mapToDetailedBookingDto(
                                 booking,
-                                owner,
+                                booking.getBooker(),
                                 booking.getItem()))
                         .toList();
             }
@@ -246,7 +246,7 @@ public class BookingServiceImpl implements BookingService {
                         .stream()
                         .map(booking -> BookingMapper.mapToDetailedBookingDto(
                                 booking,
-                                owner,
+                                booking.getBooker(),
                                 booking.getItem()))
                         .toList();
             }

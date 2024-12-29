@@ -22,10 +22,8 @@ import ru.practicum.shareit.user.dal.UserRepository;
 import ru.practicum.shareit.user.model.User;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -38,33 +36,38 @@ public class ItemServiceImpl implements ItemService {
     private final CommentRepository commentRepository;
 
     public List<ItemWithBookDateDto> getAllUserItems(Long userId) {
+        List<ItemWithBookDateDto> itemWithBookDateDto = new ArrayList<>();
         List<Item> items = itemRepository.findByOwnerId(userId);
         if (items.isEmpty()) {
             return new ArrayList<>();
         }
 
-        List<ItemWithBookDateDto> itemWithBookDateDto = new ArrayList<>();
+        List<Long> itemIds = items.stream()
+                .map(Item::getId)
+                .toList();
 
-        // Понимаю, что выборки в циклах не есть хорошо,
-        // но нормального способа ограничить количество записей внутри группы, кроме как
-        // partition для postgres, я не нашла
-        // А это может сломать работу с H2, если она понадобится для тестирования в будущем
+        LocalDateTime now = LocalDateTime.now();
+        Map<Long, Booking> lastBookings = bookingRepository
+                .findFirstByItemIdInAndStartIsBeforeOrderByStartDesc(itemIds, now)
+                .stream()
+                .collect(Collectors.toMap(
+                        entry -> entry.getItem().getId(),
+                        entry -> entry
+                ));
+
+        Map<Long, Booking> nextBookings = bookingRepository
+                .findFirstByItemIdInAndStartIsAfterOrderByStart(itemIds, now)
+                .stream()
+                .collect(Collectors.toMap(
+                        entry -> entry.getItem().getId(),
+                        entry -> entry
+                ));
+
         for (Item item : items) {
-            // В итоге для каждой позиции выбираем две записи о бронировании
-            Optional<Booking> lastBooking =
-                    bookingRepository.findFirstByItemIdAndStartIsBeforeOrderByStartDesc(
-                            item.getId(),
-                            LocalDateTime.now());
-
-            Optional<Booking> nextNearestBooking =
-                    bookingRepository.findFirstByItemIdAndStartIsAfterOrderByStart(
-                            item.getId(),
-                            LocalDateTime.now());
-
             itemWithBookDateDto.add(ItemMapper.mapToItemWithBookDateDto(
                     item,
-                    lastBooking.orElse(null),
-                    nextNearestBooking.orElse(null)));
+                    lastBookings.get(item.getId()),
+                    nextBookings.get(item.getId())));
         }
 
         return itemWithBookDateDto;
@@ -81,14 +84,15 @@ public class ItemServiceImpl implements ItemService {
         Optional<Booking> lastBooking = Optional.empty();
         Optional<Booking> nextNearestBooking = Optional.empty();
 
+        LocalDateTime now = LocalDateTime.now();
         if (Objects.equals(item.getOwnerId(), userId)) {
             lastBooking = bookingRepository.findFirstByItemIdAndStartIsBeforeOrderByStartDesc(
-                            itemId,
-                            LocalDateTime.now());
+                    itemId,
+                    now);
 
             nextNearestBooking = bookingRepository.findFirstByItemIdAndStartIsAfterOrderByStart(
-                            itemId,
-                            LocalDateTime.now());
+                    itemId,
+                    now);
         }
 
         ItemWithBookDateDto itemDto = ItemMapper.mapToItemWithBookDateDto(
