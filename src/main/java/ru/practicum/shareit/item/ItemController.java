@@ -4,7 +4,9 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import ru.practicum.shareit.item.dto.CommentDto;
 import ru.practicum.shareit.item.dto.ItemDto;
+import ru.practicum.shareit.item.dto.ItemWithBookDateDto;
 import ru.practicum.shareit.item.service.ItemService;
 
 import java.util.List;
@@ -22,14 +24,14 @@ public class ItemController {
     }
 
     @GetMapping
-    public List<ItemDto> getAllUserItems(@RequestHeader(USER_ID_HEADER) long userId) {
+    public List<ItemWithBookDateDto> getAllUserItems(@RequestHeader(USER_ID_HEADER) long userId) {
         return itemService.getAllUserItems(userId);
     }
 
     @GetMapping("/{itemId}")
-    public ItemDto getItemById(@RequestHeader(USER_ID_HEADER) long userId,
-                               @PathVariable Long itemId) {
-        return itemService.getItemById(itemId);
+    public ItemWithBookDateDto getItemById(@RequestHeader(USER_ID_HEADER) long userId,
+                                           @PathVariable Long itemId) {
+        return itemService.getItemById(itemId, userId);
     }
 
     @GetMapping("/search")
@@ -43,6 +45,14 @@ public class ItemController {
     public ItemDto create(@RequestHeader(USER_ID_HEADER) long userId,
                           @Valid @RequestBody ItemDto newItem) {
         return itemService.createItem(newItem, userId);
+    }
+
+    @PostMapping("/{itemId}/comment")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CommentDto addComment(@RequestHeader(USER_ID_HEADER) long authorId,
+                                 @PathVariable Long itemId,
+                                 @Valid @RequestBody CommentDto newComment) {
+        return itemService.addComment(authorId, itemId, newComment);
     }
 
     @PatchMapping("/{itemId}")
